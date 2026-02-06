@@ -31,3 +31,14 @@ build/
 
 ### VS Code ###
 .vscode/
+
+# Docker images / archives
+*.tar
+*.tar.gz
+*.tgz
+
+# Maven build
+target/
+
+# Logs
+*.log

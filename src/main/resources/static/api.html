@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>VulScan – API Documentation</title>
+
+  <style>
+    :root {
+      --bg:#0b1220; --panel:#111b2e; --text:#e7eefc; --muted:#a9b6d6;
+      --border:rgba(231,238,252,.12); --ok:#2ecc71; --warn:#f1c40f;
+      --link:#8ab4ff; --code:#0a0f1c;
+    }
+    body { margin:0; font-family:system-ui; background:var(--bg); color:var(--text); }
+    .wrap { max-width:1100px; margin:auto; padding:28px 18px 80px; }
+    h1 { margin:0; font-size:26px; }
+    h2 { margin:22px 0 10px; font-size:18px; }
+    h3 { margin:18px 0 8px; font-size:15px; }
+    p,li { line-height:1.55; }
+    .muted { color:var(--muted); }
+    .card { background:var(--panel); border:1px solid var(--border); border-radius:14px; padding:16px; }
+    .grid { display:grid; gap:14px; }
+    @media(min-width:1000px){ .grid{ grid-template-columns:320px 1fr; } }
+    .toc a { display:block; padding:8px 10px; border-radius:10px; text-decoration:none; color:var(--text); }
+    .toc a:hover { background:rgba(231,238,252,.05); }
+    pre { background:var(--code); border:1px solid var(--border); border-radius:12px; padding:12px; overflow:auto; }
+    code { font-family:ui-monospace,monospace; }
+    .method { font-weight:700; font-size:12px; padding:3px 10px; border-radius:999px; border:1px solid var(--border); }
+    .GET{ color:var(--ok);} .POST{ color:var(--warn);}
+    a{ color:var(--link);}
+    .endpoint{ border-top:1px dashed var(--border); padding-top:14px; margin-top:14px;}
+  </style>
+</head>
+
+<body>
+<div class="wrap">
+  <h1>VulScan API Documentation</h1>
+  <p class="muted">Base URL: <code>http://localhost:8080</code></p>
+
+  <div class="grid">
+    <!-- TOC -->
+    <aside class="card toc">
+      <h2>Contents</h2>
+      <a href="#overview">Overview</a>
+      <a href="#dashboard">Dashboard</a>
+      <a href="#kev">KEV Catalog</a>
+      <a href="#inventory">Inventory</a>
+      <a href="#risk">Risk</a>
+      <a href="#errors">Error handling</a>
+      <a href="#curl">cURL examples</a>
+    </aside>
+
+    <!-- MAIN -->
+    <main class="card">
+
+      <section id="overview">
+        <h2>Overview</h2>
+        <p class="muted">
+          VulScan is an internal vulnerability management backend that correlates
+          asset inventory data with public vulnerability sources.
+          The API is consumed by a lightweight dashboard UI and inventory clients.
+        </p>
+        <ul>
+          <li>KEV data is fetched from the CISA Known Exploited Vulnerabilities feed</li>
+          <li>Inventory is imported as CSV from client scripts</li>
+          <li>Risk views combine inventory and KEV information</li>
+        </ul>
+      </section>
+
+      <section id="dashboard" class="endpoint">
+        <h2>Dashboard</h2>
+
+        <h3><span class="method GET">GET</span> /api/dashboard/summary</h3>
+        <p class="muted">Returns aggregated dashboard statistics.</p>
+        <pre>{
+  "totalHosts": 12,
+  "totalInventoryItems": 404,
+  "kevEntries": 1234,
+  "lastKevRefresh": "2026-02-05"
+}</pre>
+
+        <h3><span class="method GET">GET</span> /api/dashboard/hosts</h3>
+        <p class="muted">Returns per-host inventory summary.</p>
+        <pre>[
+  {
+    "hostname": "PC-001",
+    "softwareCount": 42
+  }
+]</pre>
+      </section>
+
+      <section id="kev" class="endpoint">
+        <h2>KEV Catalog</h2>
+
+        <h3><span class="method GET">GET</span> /api/kev/status</h3>
+        <p class="muted">Returns last KEV refresh date and result.</p>
+        <pre>{
+  "lastRefreshDate": "2026-02-05",
+  "lastResult": "OK (1234 entries stored)"
+}</pre>
+
+        <h3><span class="method POST">POST</span> /api/kev/refresh</h3>
+        <p class="muted">Triggers a refresh from the CISA KEV feed.</p>
+        <pre>{
+  "inserted": 1234,
+  "updated": 0,
+  "message": "OK"
+}</pre>
+
+        <h3><span class="method GET">GET</span> /api/kev/latest</h3>
+        <p class="muted">Returns latest KEV entries for dashboard tables.</p>
+        <pre>[
+  {
+    "cveId": "CVE-2026-0001",
+    "vendor": "ExampleVendor",
+    "product": "ExampleProduct",
+    "dateAdded": "2026-02-01"
+  }
+]</pre>
+
+        <h3><span class="method GET">GET</span> /api/kev/catalog</h3>
+        <p class="muted">Returns the full KEV catalog (use carefully).</p>
+      </section>
+
+      <section id="inventory" class="endpoint">
+        <h2>Inventory</h2>
+
+        <h3><span class="method POST">POST</span> /api/inventory/import</h3>
+        <p class="muted">Imports inventory items from CSV (multipart/form-data).</p>
+        <pre>{
+  "rowsRead": 404,
+  "rowsInserted": 404,
+  "rowsRejected": 0,
+  "errors": []
+}</pre>
+
+        <h3>CSV format</h3>
+        <pre>hostname,product,vendor,version,installedOn,source,cpe</pre>
+
+        <h3><span class="method GET">GET</span> /api/inventory</h3>
+        <p class="muted">Lists inventory items.</p>
+      </section>
+
+      <section id="risk" class="endpoint">
+        <h2>Risk</h2>
+
+        <h3><span class="method GET">GET</span> /api/risk/top</h3>
+        <p class="muted">Returns highest-risk assets based on KEV correlation.</p>
+        <pre>[
+  {
+    "hostname": "PC-001",
+    "riskScore": 0.92,
+    "kevCount": 5
+  }
+]</pre>
+      </section>
+
+      <section id="errors" class="endpoint">
+        <h2>Error handling</h2>
+        <p class="muted">Errors follow standard HTTP status codes.</p>
+        <pre>{
+  "status": 400,
+  "error": "Bad Request",
+  "message": "Missing CSV file"
+}</pre>
+      </section>
+
+      <section id="curl" class="endpoint">
+        <h2>cURL examples</h2>
+        <pre>curl http://localhost:8080/api/kev/status</pre>
+        <pre>curl -X POST http://localhost:8080/api/kev/refresh</pre>
+        <pre>curl -F "file=@C:\SoftwareInventory.csv" http://localhost:8080/api/inventory/import</pre>
+      </section>
+
+    </main>
+  </div>
+</div>
+</body>
+</html>

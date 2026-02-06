@@ -1,0 +1,18 @@
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/VulScanDb}
+    username: ${DB_USER:vulscan}
+    password: ${DB_PASS:vulscan}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+  flyway:
+    enabled: true
+
+server:
+  port: 8080
+
+app:
+  default-top-limit: 50
+  kev-feed-url: https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json
