@@ -4,6 +4,7 @@
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>VulScan – API Documentation</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 
   <style>
     :root {
@@ -26,13 +27,49 @@
     pre { background:var(--code); border:1px solid var(--border); border-radius:12px; padding:12px; overflow:auto; }
     code { font-family:ui-monospace,monospace; }
     .method { font-weight:700; font-size:12px; padding:3px 10px; border-radius:999px; border:1px solid var(--border); }
-    .GET{ color:var(--ok);} .POST{ color:var(--warn);}
-    a{ color:var(--link);}
+    .GET{ color:var(--ok);} .POST{ color:var(--warn);} .PUT{ color:#74c0fc; }
+    .wrap a{ color:var(--link);}
     .endpoint{ border-top:1px dashed var(--border); padding-top:14px; margin-top:14px;}
   </style>
 </head>
 
 <body>
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+  <div class="container">
+    <a class="navbar-brand" href="/dashboard.html">VulScan</a>
+
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#topnav"
+            aria-controls="topnav" aria-expanded="false" aria-label="Toggle navigation">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+
+    <div class="collapse navbar-collapse" id="topnav">
+      <ul class="navbar-nav me-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/dashboard.html">Dashboard</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/assets.html">Assets</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/admin-users.html">Access</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/feeds.html">Feeds</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link active" href="/api.html">API documentation</a>
+        </li>
+      </ul>
+
+      <div class="d-flex align-items-center gap-3">
+        <span id="currentUser" class="text-light small"></span>
+        <button id="btnLogout" class="btn btn-sm btn-outline-light" type="button">Logout</button>
+      </div>
+    </div>
+  </div>
+</nav>
+
 <div class="wrap">
   <h1>VulScan API Documentation</h1>
   <p class="muted">Base URL: <code>http://localhost:8080</code></p>
@@ -42,10 +79,15 @@
     <aside class="card toc">
       <h2>Contents</h2>
       <a href="#overview">Overview</a>
+      <a href="#auth">Authentication</a>
+      <a href="#user">User profile</a>
+      <a href="#admin">Admin users</a>
       <a href="#dashboard">Dashboard</a>
-      <a href="#kev">KEV Catalog</a>
       <a href="#inventory">Inventory</a>
-      <a href="#risk">Risk</a>
+      <a href="#kev">KEV Catalog</a>
+      <a href="#feeds">Feeds</a>
+      <a href="#risks">Risks</a>
+      <a href="#assets">Assets</a>
       <a href="#errors">Error handling</a>
       <a href="#curl">cURL examples</a>
     </aside>
@@ -61,10 +103,64 @@
           The API is consumed by a lightweight dashboard UI and inventory clients.
         </p>
         <ul>
-          <li>KEV data is fetched from the CISA Known Exploited Vulnerabilities feed</li>
+          <li>JWT authentication with access + refresh tokens</li>
           <li>Inventory is imported as CSV from client scripts</li>
-          <li>Risk views combine inventory and KEV information</li>
+          <li>Feed management for KEV, EPSS, and NVD</li>
+          <li>Risk views combine inventory, KEV, EPSS and NVD advisory signals</li>
+          <li>Assets search API supports host/software/CVE/risk filtering and suggestions</li>
         </ul>
+      </section>
+
+      <section id="auth" class="endpoint">
+        <h2>Authentication</h2>
+
+        <h3><span class="method POST">POST</span> /api/auth/login</h3>
+        <p class="muted">Returns JWT access and refresh token pair.</p>
+        <pre>{
+  "email": "superadmin@vulscan.local",
+  "password": "SuperAdmin123!"
+}</pre>
+
+        <h3><span class="method POST">POST</span> /api/auth/refresh</h3>
+        <p class="muted">Refreshes access token using refresh token.</p>
+        <pre>{
+  "refreshToken": "..."
+}</pre>
+      </section>
+
+      <section id="user" class="endpoint">
+        <h2>User profile</h2>
+
+        <h3><span class="method GET">GET</span> /api/users/me</h3>
+        <p class="muted">Authenticated user profile (<code>USER/ADMIN/SUPERADMIN</code>).</p>
+        <pre>{
+  "id": 1,
+  "email": "superadmin@vulscan.local",
+  "status": "ACTIVE",
+  "roles": ["USER", "ADMIN", "SUPERADMIN"]
+}</pre>
+      </section>
+
+      <section id="admin" class="endpoint">
+        <h2>Admin users</h2>
+
+        <h3><span class="method GET">GET</span> /api/admin/users</h3>
+        <p class="muted">List users (<code>ADMIN/SUPERADMIN</code>).</p>
+
+        <h3><span class="method POST">POST</span> /api/admin/users</h3>
+        <p class="muted">Create user (<code>ADMIN/SUPERADMIN</code>).</p>
+        <pre>{
+  "email": "user@company.local",
+  "password": "ChangeMe123!",
+  "status": "ACTIVE",
+  "roles": ["USER"]
+}</pre>
+
+        <h3><span class="method PUT">PUT</span> /api/admin/users/{id}/roles</h3>
+        <p class="muted">Update user roles (<code>ADMIN/SUPERADMIN</code>).</p>
+
+        <h3><span class="method PUT">PUT</span> /api/admin/users/{id}/status</h3>
+        <p class="muted">Update user status (<code>ADMIN/SUPERADMIN</code>).</p>
       </section>
 
       <section id="dashboard" class="endpoint">
@@ -73,60 +169,34 @@
         <h3><span class="method GET">GET</span> /api/dashboard/summary</h3>
         <p class="muted">Returns aggregated dashboard statistics.</p>
         <pre>{
-  "totalHosts": 12,
-  "totalInventoryItems": 404,
-  "kevEntries": 1234,
-  "lastKevRefresh": "2026-02-05"
+  "inventoryRows": 404,
+  "hostCount": 12,
+  "kevCount": 1234,
+  "lastInventorySeenAt": "2026-03-03T11:22:33"
 }</pre>
 
-        <h3><span class="method GET">GET</span> /api/dashboard/hosts</h3>
-        <p class="muted">Returns per-host inventory summary.</p>
+        <h3><span class="method GET">GET</span> /api/dashboard/hosts/recent?limit=5</h3>
+        <p class="muted">Returns recent hosts list (limit 1..20).</p>
         <pre>[
   {
     "hostname": "PC-001",
-    "softwareCount": 42
-  }
-]</pre>
-      </section>
-
-      <section id="kev" class="endpoint">
-        <h2>KEV Catalog</h2>
-
-        <h3><span class="method GET">GET</span> /api/kev/status</h3>
-        <p class="muted">Returns last KEV refresh date and result.</p>
-        <pre>{
-  "lastRefreshDate": "2026-02-05",
-  "lastResult": "OK (1234 entries stored)"
-}</pre>
-
-        <h3><span class="method POST">POST</span> /api/kev/refresh</h3>
-        <p class="muted">Triggers a refresh from the CISA KEV feed.</p>
-        <pre>{
-  "inserted": 1234,
-  "updated": 0,
-  "message": "OK"
-}</pre>
-
-        <h3><span class="method GET">GET</span> /api/kev/latest</h3>
-        <p class="muted">Returns latest KEV entries for dashboard tables.</p>
-        <pre>[
-  {
-    "cveId": "CVE-2026-0001",
-    "vendor": "ExampleVendor",
-    "product": "ExampleProduct",
-    "dateAdded": "2026-02-01"
+    "itemCount": 42,
+    "lastSeenAt": "2026-03-03T11:22:33"
   }
 ]</pre>
 
-        <h3><span class="method GET">GET</span> /api/kev/catalog</h3>
-        <p class="muted">Returns the full KEV catalog (use carefully).</p>
+        <h3><span class="method GET">GET</span> /api/dashboard/kev/latest</h3>
+        <p class="muted">Latest KEV aggregate information for dashboard widgets.</p>
       </section>
 
       <section id="inventory" class="endpoint">
         <h2>Inventory</h2>
 
+        <h3><span class="method GET">GET</span> /api/inventory/health</h3>
+        <p class="muted">Health check endpoint (<code>USER/ADMIN/SUPERADMIN</code>).</p>
+
         <h3><span class="method POST">POST</span> /api/inventory/import</h3>
-        <p class="muted">Imports inventory items from CSV (multipart/form-data).</p>
+        <p class="muted">Imports inventory items from CSV (<code>multipart/form-data</code>, field name: <code>file</code>).</p>
         <pre>{
   "rowsRead": 404,
   "rowsInserted": 404,
@@ -136,23 +206,127 @@
 
         <h3>CSV format</h3>
         <pre>hostname,product,vendor,version,installedOn,source,cpe</pre>
-
-        <h3><span class="method GET">GET</span> /api/inventory</h3>
-        <p class="muted">Lists inventory items.</p>
       </section>
 
-      <section id="risk" class="endpoint">
-        <h2>Risk</h2>
+      <section id="kev" class="endpoint">
+        <h2>KEV Catalog</h2>
 
-        <h3><span class="method GET">GET</span> /api/risk/top</h3>
-        <p class="muted">Returns highest-risk assets based on KEV correlation.</p>
+        <h3><span class="method GET">GET</span> /api/kev/status</h3>
+        <p class="muted">Returns last KEV refresh status.</p>
+        <pre>{
+  "refreshedAt": "2026-03-03T11:22:33+01:00",
+  "vulnsRead": 1234,
+  "upserted": 1234,
+  "kevCountBefore": 1200,
+  "kevCountAfter": 1234,
+  "added": 34
+}</pre>
+
+        <h3><span class="method POST">POST</span> /api/kev/refresh</h3>
+        <p class="muted">Triggers KEV refresh (<code>ADMIN/SUPERADMIN</code>).</p>
+        <pre>{
+  "vulnsRead": 1234,
+  "upserted": 1234
+}</pre>
+      </section>
+
+      <section id="feeds" class="endpoint">
+        <h2>Feeds</h2>
+
+        <h3><span class="method GET">GET</span> /api/feeds</h3>
+        <p class="muted">Lists configured public feeds (<code>KEV</code>, <code>EPSS</code>, <code>NVD</code>).</p>
+        <pre>[
+  {
+    "type": "NVD",
+    "enabled": true,
+    "feedUrl": "https://services.nvd.nist.gov/rest/json/cves/2.0",
+    "lastRefreshedAt": "2026-03-03T11:22:33+01:00",
+    "lastStatus": "WARN",
+    "lastMessage": "PARTIAL (skipped=18) processed=120/1234 (read=201, upserted=201)"
+  }
+]</pre>
+
+        <h3><span class="method POST">POST</span> /api/feeds/{feedType}/refresh</h3>
+        <p class="muted">Triggers refresh for one feed (<code>ADMIN/SUPERADMIN</code>).</p>
+
+        <h3><span class="method POST">POST</span> /api/feeds/refresh-enabled</h3>
+        <p class="muted">Triggers refresh for all feeds in serial order: <code>KEV -&gt; EPSS -&gt; NVD</code> (<code>ADMIN/SUPERADMIN</code>).</p>
+
+        <h3><span class="method POST">POST</span> /api/feeds/{feedType}/refresh-async</h3>
+        <p class="muted">Starts one feed refresh in background and returns job metadata (<code>ADMIN/SUPERADMIN</code>).</p>
+
+        <h3><span class="method POST">POST</span> /api/feeds/refresh-enabled-async</h3>
+        <p class="muted">Starts all-feed serial refresh in background and returns created jobs (<code>ADMIN/SUPERADMIN</code>).</p>
+
+        <h3><span class="method GET">GET</span> /api/feeds/jobs</h3>
+        <p class="muted">Lists background feed refresh jobs (<code>ADMIN/SUPERADMIN</code>).</p>
+        <pre>[
+  {
+    "jobId": "3f6b2a9d-7f04-4b0e-9176-78f3fd4b9c43",
+    "feedType": "NVD",
+    "status": "RUNNING",
+    "createdAt": "2026-03-03T11:22:33+01:00",
+    "startedAt": "2026-03-03T11:22:34+01:00",
+    "finishedAt": null,
+    "result": null,
+    "message": "refresh in progress"
+  }
+]</pre>
+
+        <h3><span class="method POST">POST</span> /api/feeds/jobs/{jobId}/cancel</h3>
+        <p class="muted">Requests cancellation of a background refresh job (<code>ADMIN/SUPERADMIN</code>).</p>
+
+        <h3><span class="method PUT">PUT</span> /api/feeds/{feedType}</h3>
+        <p class="muted">Updates one feed settings (<code>ADMIN/SUPERADMIN</code>).</p>
+        <pre>{
+  "enabled": true,
+  "feedUrl": "https://api.first.org/data/v1/epss"
+}</pre>
+      </section>
+
+      <section id="risks" class="endpoint">
+        <h2>Risks</h2>
+
+        <h3><span class="method GET">GET</span> /api/risks/top?limit=20</h3>
+        <p class="muted">Returns highest-risk correlated rows (limit 1..200).</p>
         <pre>[
   {
     "hostname": "PC-001",
-    "riskScore": 0.92,
-    "kevCount": 5
+    "cveId": "CVE-2021-1234",
+    "score": 812,
+    "epssScore": 0.93,
+    "advisoryCount": 4,
+    "patchAvailable": true,
+    "advisoryUrl": "https://vendor.example/advisory"
   }
 ]</pre>
+      </section>
+
+      <section id="assets" class="endpoint">
+        <h2>Assets</h2>
+
+        <h3><span class="method GET">GET</span> /api/assets/search</h3>
+        <p class="muted">Searches asset rows with optional filters (<code>USER/ADMIN/SUPERADMIN</code>).</p>
+        <p class="muted">Query params: <code>q</code>, <code>hostname</code>, <code>product</code>, <code>vendor</code>, <code>version</code>, <code>cveId</code>, <code>minScore</code>, <code>maxScore</code>, <code>limit</code> (default 200).</p>
+        <pre>[
+  {
+    "hostname": "PC-001",
+    "product": "Google Chrome",
+    "vendor": "Google",
+    "version": "122.0.6261.95",
+    "cveId": "CVE-2024-12345",
+    "score": 812,
+    "epssScore": 0.93,
+    "advisoryCount": 4,
+    "patchAvailable": true
+  }
+]</pre>
+
+        <h3><span class="method GET">GET</span> /api/assets/hostnames?prefix=&amp;limit=10</h3>
+        <p class="muted">Returns top hostname suggestions for autocomplete (<code>USER/ADMIN/SUPERADMIN</code>).</p>
+
+        <h3><span class="method GET">GET</span> /api/assets/products?prefix=&amp;limit=10</h3>
+        <p class="muted">Returns top software/product suggestions for autocomplete (<code>USER/ADMIN/SUPERADMIN</code>).</p>
       </section>
 
       <section id="errors" class="endpoint">
@@ -167,13 +341,91 @@
 
       <section id="curl" class="endpoint">
         <h2>cURL examples</h2>
+        <pre>curl -X POST http://localhost:8080/api/auth/login -H "Content-Type: application/json" -d "{\"email\":\"superadmin@vulscan.local\",\"password\":\"SuperAdmin123!\"}"</pre>
+        <pre>curl http://localhost:8080/api/users/me -H "Authorization: Bearer &lt;ACCESS_TOKEN&gt;"</pre>
+        <pre>curl http://localhost:8080/api/dashboard/summary -H "Authorization: Bearer &lt;ACCESS_TOKEN&gt;"</pre>
         <pre>curl http://localhost:8080/api/kev/status</pre>
-        <pre>curl -X POST http://localhost:8080/api/kev/refresh</pre>
-        <pre>curl -F "file=@C:\SoftwareInventory.csv" http://localhost:8080/api/inventory/import</pre>
+        <pre>curl -X POST http://localhost:8080/api/kev/refresh -H "Authorization: Bearer &lt;ACCESS_TOKEN&gt;"</pre>
+        <pre>curl http://localhost:8080/api/feeds -H "Authorization: Bearer &lt;ACCESS_TOKEN&gt;"</pre>
+        <pre>curl -X POST http://localhost:8080/api/feeds/NVD/refresh -H "Authorization: Bearer &lt;ACCESS_TOKEN&gt;"</pre>
+        <pre>curl -X POST http://localhost:8080/api/feeds/refresh-enabled -H "Authorization: Bearer &lt;ACCESS_TOKEN&gt;"</pre>
+        <pre>curl -X POST http://localhost:8080/api/feeds/refresh-enabled-async -H "Authorization: Bearer &lt;ACCESS_TOKEN&gt;"</pre>
+        <pre>curl http://localhost:8080/api/feeds/jobs -H "Authorization: Bearer &lt;ACCESS_TOKEN&gt;"</pre>
+        <pre>curl -F "file=@C:\SoftwareInventory.csv" http://localhost:8080/api/inventory/import -H "Authorization: Bearer &lt;ACCESS_TOKEN&gt;"</pre>
+        <pre>curl "http://localhost:8080/api/risks/top?limit=20" -H "Authorization: Bearer &lt;ACCESS_TOKEN&gt;"</pre>
+        <pre>curl "http://localhost:8080/api/assets/search?hostname=PC-001&amp;limit=50" -H "Authorization: Bearer &lt;ACCESS_TOKEN&gt;"</pre>
+        <pre>curl "http://localhost:8080/api/assets/hostnames?prefix=pc&amp;limit=10" -H "Authorization: Bearer &lt;ACCESS_TOKEN&gt;"</pre>
+        <pre>curl "http://localhost:8080/api/assets/products?prefix=chrome&amp;limit=10" -H "Authorization: Bearer &lt;ACCESS_TOKEN&gt;"</pre>
       </section>
 
     </main>
   </div>
 </div>
+
+<script>
+  const currentUserEl = document.getElementById('currentUser');
+
+  function accessToken() { return localStorage.getItem('accessToken'); }
+  function refreshToken() { return localStorage.getItem('refreshToken'); }
+  function logout() {
+    localStorage.removeItem('accessToken');
+    localStorage.removeItem('refreshToken');
+    window.location.replace('/');
+  }
+
+  async function tryRefreshToken() {
+    const rt = refreshToken();
+    if (!rt) return false;
+    const res = await fetch('/api/auth/refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refreshToken: rt })
+    });
+    if (!res.ok) return false;
+    const data = await res.json();
+    if (!data || !data.accessToken) return false;
+    localStorage.setItem('accessToken', data.accessToken);
+    if (data.refreshToken) localStorage.setItem('refreshToken', data.refreshToken);
+    return true;
+  }
+
+  async function apiFetch(url, options = {}, allowRetry = true) {
+    const token = accessToken();
+    const headers = Object.assign({}, options.headers || {});
+    if (token) headers.Authorization = 'Bearer ' + token;
+
+    let res = await fetch(url, Object.assign({}, options, { headers }));
+    if (res.status === 401 && allowRetry) {
+      const refreshed = await tryRefreshToken();
+      if (refreshed) {
+        const retryHeaders = Object.assign({}, options.headers || {}, { Authorization: 'Bearer ' + accessToken() });
+        res = await fetch(url, Object.assign({}, options, { headers: retryHeaders }));
+      }
+    }
+    if (res.status === 401) {
+      logout();
+      throw new Error('Unauthorized');
+    }
+    if (res.status === 403) {
+      throw new Error('Access denied');
+    }
+    return res;
+  }
+
+  async function loadCurrentUser() {
+    try {
+      const res = await apiFetch('/api/users/me');
+      const me = await res.json();
+      const roles = (me.roles || []).map(r => String(r).toUpperCase().replace(/^ROLE_/, '')).join(', ');
+      currentUserEl.textContent = `${me.email || 'unknown'} (${roles || 'n/a'})`;
+    } catch {
+      currentUserEl.textContent = '';
+    }
+  }
+
+  document.getElementById('btnLogout').addEventListener('click', logout);
+  loadCurrentUser();
+</script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

@@ -11,5 +11,17 @@ public record TopRiskDto(
         String kevProduct,
         LocalDate dueDate,
         Boolean knownRansomwareCampaignUse,
-        int score
+        int score,
+        int kevBaseScore,
+        int ransomwareBonus,
+        int dueUrgencyScore,
+        int kevRecencyScore,
+        int epssExploitScore,
+        Double epssScore,
+        int assetCriticalityScore,
+        int matchConfidenceScore,
+        int advisoryCount,
+        Boolean patchAvailable,
+        String advisoryUrl,
+        Integer daysToDue
 ) {}

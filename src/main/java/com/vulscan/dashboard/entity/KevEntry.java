@@ -84,10 +84,10 @@ public class KevEntry {
     @Column(name = "cve_id", length = 20, nullable = false)
     private String cveId;
 
-    @Column(name = "vendor_project")
+    @Column(name = "vendor_project", length = 1000)
     private String vendorProject;
 
-    @Column(name = "product")
+    @Column(name = "product", length = 1000)
     private String product;
 
     @Column(name="vulnerability_name", columnDefinition = "TEXT")

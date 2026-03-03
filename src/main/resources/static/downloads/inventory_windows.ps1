@@ -1,28 +1,34 @@
 $reportPath = "C:\SoftwareInventory.csv"
 $hostname = $env:COMPUTERNAME
 
+[Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+$OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+chcp 65001 > $null
+
 function To-CPE($vendor, $product, $version) {
-    # egyszerű tisztítás
     $v = ($vendor -replace '[^a-zA-Z0-9]', '_').ToLower()
     $p = ($product -replace '[^a-zA-Z0-9]', '_').ToLower()
     $ver = ($version -replace '[^a-zA-Z0-9\.]', '_').ToLower()
 
-    return "cpe:2.3:a:$v:$p:$ver:*:*:*:*:*:*:*"
+    return "cpe:2.3:a:${v}:${p}:${ver}:*:*:*:*:*:*:*"
 }
 
 function Normalize-InstallDate($raw) {
     if (-not $raw) { return $null }
-
-    # YYYYMMDD → YYYY-MM-DD
     if ($raw -match '^\d{8}$') {
         return "{0}-{1}-{2}" -f $raw.Substring(0,4), $raw.Substring(4,2), $raw.Substring(6,2)
     }
-
-    # egyéb formátum → hagyjuk érintetlenül
     return $raw
 }
 
-# Win32 programok
+function Limit-Text($value, $maxLen = 255) {
+    if ($null -eq $value) { return $null }
+    $text = [string]$value
+    if ($text.Length -le $maxLen) { return $text }
+    return $text.Substring(0, $maxLen)
+}
+
 $paths = @(
   "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*",
   "HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
@@ -33,12 +39,11 @@ $win32_raw = Get-ItemProperty $paths | Where-Object { $_.DisplayName }
 $win32 = $win32_raw | ForEach-Object {
     $vendor  = $_.Publisher
     $product = $_.DisplayName
-    $version = $_.DisplayVersion
+    $version = Limit-Text $_.DisplayVersion 100
 
-    # null-safe értékek CPE-hez
-    $v0   = $vendor  ?? "unknown"
-    $p0   = $product ?? "unknown"
-    $ver0 = $version ?? "unknown"
+    $v0   = if ($vendor)  { $vendor }  else { "unknown" }
+    $p0   = if ($product) { $product } else { "unknown" }
+    $ver0 = if ($version) { $version } else { "unknown" }
 
     [PSCustomObject]@{
         hostname    = $hostname
@@ -51,18 +56,16 @@ $win32 = $win32_raw | ForEach-Object {
     }
 }
 
-# Store appok
 $store_raw = Get-AppxPackage
 
 $store = $store_raw | ForEach-Object {
     $vendor  = $_.Publisher
     $product = $_.Name
-    $version = $_.Version
+    $version = Limit-Text $_.Version 100
 
-    # null-safe értékek CPE-hez
-    $v0   = $vendor  ?? "unknown"
-    $p0   = $product ?? "unknown"
-    $ver0 = $version ?? "unknown"
+    $v0   = if ($vendor)  { $vendor }  else { "unknown" }
+    $p0   = if ($product) { $product } else { "unknown" }
+    $ver0 = if ($version) { $version } else { "unknown" }
 
     [PSCustomObject]@{
         hostname    = $hostname
@@ -75,39 +78,98 @@ $store = $store_raw | ForEach-Object {
     }
 }
 
-# Egyesített lista
 $all = $win32 + $store
 
-# Export
-$all | Export-Csv -Path $reportPath -NoTypeInformation -Encoding UTF8
+# UTF-8 BOM nélkül
+$csv = $all | ConvertTo-Csv -NoTypeInformation
+if ($csv.Count -gt 0) {
+    $csv[0] = $csv[0] -replace "^`uFEFF", ''
+}
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+[System.IO.File]::WriteAllLines($reportPath, $csv, $utf8NoBom)
 
-Write-Host "Szoftverleltár elkészült: $reportPath"
+Write-Host "Software inventory CSV created: $reportPath"
 
-# Upload to API if requested (defaults to localhost)
 $apiUrl = $env:API_URL
 if (-not $apiUrl) { $apiUrl = 'http://localhost:8080/api/inventory/import' }
 
-Write-Host "Feltöltés: $apiUrl"
+$authUrl = $env:AUTH_URL
+if (-not $authUrl) {
+    if ($apiUrl -match '/api/inventory/import$') {
+        $authUrl = ($apiUrl -replace '/api/inventory/import$', '/api/auth/login')
+    } else {
+        $authUrl = 'http://localhost:8080/api/auth/login'
+    }
+}
+
+$apiToken = $null
+$apiUser = 'superadmin@vulscan.local'
+$apiPass = 'SuperAdmin123!'
+
+Write-Host "Upload target: $apiUrl"
+
+if (-not $apiToken -and $apiUser -and $apiPass) {
+    try {
+        $loginPayload = @{ email = $apiUser; password = $apiPass } | ConvertTo-Json
+        $loginResp = Invoke-RestMethod -Uri $authUrl -Method Post -Body $loginPayload -ContentType 'application/json'
+        if ($loginResp -and $loginResp.accessToken) {
+            $apiToken = $loginResp.accessToken
+            Write-Host "JWT token acquired: $authUrl"
+        }
+    }
+    catch {
+        Write-Warning "Login failed: $($_.Exception.Message)"
+    }
+}
+
+if (-not $apiToken) {
+    Write-Warning "No API token. Check credentials and auth endpoint settings."
+}
 
 try {
-    Write-Host "Uploading $reportPath to $apiUrl using Invoke-RestMethod..."
-    $form = @{ file = Get-Item -Path $reportPath }
-    $resp = Invoke-RestMethod -Uri $apiUrl -Method Post -Form $form -ErrorAction Stop
-    Write-Host "Upload successful. Response:`n$($resp | Out-String)"
-} catch {
-    Write-Warning "Invoke-RestMethod failed: $($_.Exception.Message)"
-    Write-Host "Falling back to curl.exe if available..."
-    try {
-        $curlPath = (Get-Command curl.exe -ErrorAction SilentlyContinue).Source
-        if ($null -ne $curlPath) {
-            & $curlPath -sS -F "file=@$reportPath" $apiUrl
-            Write-Host "Upload via curl.exe finished."
+    $boundary = [System.Guid]::NewGuid().ToString()
+    $LF = "`r`n"
+
+    $fileBytes = [System.IO.File]::ReadAllBytes($reportPath)
+    $fileContent = [System.Text.Encoding]::UTF8.GetString($fileBytes)
+
+    $bodyLines = (
+        "--$boundary",
+        "Content-Disposition: form-data; name=`"file`"; filename=`"SoftwareInventory.csv`"",
+        "Content-Type: text/csv$LF",
+        $fileContent,
+        "--$boundary--$LF"
+    ) -join $LF
+
+    $headers = @{}
+    if ($apiToken) {
+        $headers['Authorization'] = "Bearer $apiToken"
+    }
+
+    Invoke-RestMethod -Uri $apiUrl -Method Post -Body $bodyLines -ContentType "multipart/form-data; boundary=$boundary" -Headers $headers
+    Write-Host "Upload successful."
+}
+catch {
+    $statusCode = $null
+    $responseBody = $null
+    if ($_.Exception.Response) {
+        try {
+            $statusCode = $_.Exception.Response.StatusCode.value__
+            $reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
+            $responseBody = $reader.ReadToEnd()
+            $reader.Dispose()
+        } catch {}
+    }
+
+    if ($statusCode -eq 401 -or $statusCode -eq 403) {
+        Write-Warning "Upload failed ($statusCode): missing permission or invalid token."
+        if ($responseBody) { Write-Warning "Server response: $responseBody" }
+    }
+    else {
+        if ($responseBody) {
+            Write-Warning "Upload failed: $responseBody"
         } else {
-            Write-Error "curl.exe not found and Invoke-RestMethod failed. Upload aborted."
-            exit 1
+            Write-Warning "Upload failed: $($_.Exception.Message)"
         }
-    } catch {
-        Write-Error "Fallback upload failed: $($_.Exception.Message)"
-        exit 1
     }
 }

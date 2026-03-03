@@ -3,12 +3,14 @@ package com.vulscan.dashboard.controller;
 import com.vulscan.dashboard.dto.TopRiskDto;
 import com.vulscan.dashboard.service.RiskService;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
 @RestController
 @RequestMapping("/api/risks")
+@PreAuthorize("hasAnyRole('USER','ADMIN','SUPERADMIN')")
 public class RiskController {
 
     private final RiskService service;

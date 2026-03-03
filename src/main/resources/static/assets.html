@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VulScan – Assets</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    .assets-table { font-size: 0.8rem; }
+    .assets-table th { white-space: nowrap; cursor: pointer; user-select: none; }
+    .sort-indicator { opacity: 0.7; margin-left: 4px; }
+  </style>
+</head>
+<body class="bg-light">
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+  <div class="container">
+    <a class="navbar-brand" href="/dashboard.html">VulScan</a>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#topnav"
+            aria-controls="topnav" aria-expanded="false" aria-label="Toggle navigation">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+
+    <div class="collapse navbar-collapse" id="topnav">
+      <ul class="navbar-nav me-auto">
+        <li class="nav-item"><a class="nav-link" href="/dashboard.html">Dashboard</a></li>
+        <li class="nav-item"><a class="nav-link active" href="/assets.html">Assets</a></li>
+        <li class="nav-item"><a class="nav-link" href="/admin-users.html">Access</a></li>
+        <li class="nav-item"><a class="nav-link" href="/feeds.html">Feeds</a></li>
+        <li class="nav-item"><a class="nav-link" href="/api.html">API documentation</a></li>
+      </ul>
+      <span id="currentUser" class="text-light small me-3"></span>
+      <button id="btnLogout" class="btn btn-sm btn-outline-light" type="button">Logout</button>
+    </div>
+  </div>
+</nav>
+
+<div class="container my-4">
+  <div class="card shadow-sm mb-3">
+    <div class="card-body">
+      <h5 class="card-title mb-3">Asset search & filters</h5>
+      <div class="row g-2">
+        <div class="col-12 col-md-4">
+          <input id="q" class="form-control" placeholder="Search host/product/vendor/version/CVE" />
+        </div>
+        <div class="col-6 col-md-2">
+          <input id="hostname" class="form-control" placeholder="Hostname" list="hostnameSuggestions" autocomplete="off" />
+          <datalist id="hostnameSuggestions"></datalist>
+        </div>
+        <div class="col-6 col-md-2">
+          <input id="product" class="form-control" placeholder="Software" list="productSuggestions" autocomplete="off" />
+          <datalist id="productSuggestions"></datalist>
+        </div>
+        <div class="col-6 col-md-2">
+          <input id="version" class="form-control" placeholder="Version" />
+        </div>
+        <div class="col-6 col-md-2">
+          <input id="cveId" class="form-control" placeholder="CVE" />
+        </div>
+        <div class="col-6 col-md-2">
+          <input id="minScore" type="number" min="0" max="1000" class="form-control" placeholder="Min score" />
+        </div>
+        <div class="col-6 col-md-2">
+          <input id="maxScore" type="number" min="0" max="1000" class="form-control" placeholder="Max score" />
+        </div>
+        <div class="col-6 col-md-2">
+          <input id="limit" type="number" min="1" max="1000" class="form-control" placeholder="Limit" value="200" />
+        </div>
+        <div class="col-12 col-md-4 d-flex gap-2">
+          <button id="btnSearch" class="btn btn-primary">Search</button>
+          <button id="btnReset" class="btn btn-outline-secondary">Reset</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="status" class="small text-muted mb-2"></div>
+
+  <div class="card shadow-sm">
+    <div class="card-body">
+      <div class="table-responsive">
+        <table class="table table-sm align-middle assets-table">
+          <thead>
+          <tr>
+            <th data-sort="hostname">Host<span class="sort-indicator" id="sort-hostname"></span></th>
+            <th data-sort="product">Product<span class="sort-indicator" id="sort-product"></span></th>
+            <th data-sort="vendor">Vendor<span class="sort-indicator" id="sort-vendor"></span></th>
+            <th data-sort="version">Version<span class="sort-indicator" id="sort-version"></span></th>
+            <th data-sort="cveId">CVE<span class="sort-indicator" id="sort-cveId"></span></th>
+            <th data-sort="score">Score<span class="sort-indicator" id="sort-score"></span></th>
+            <th data-sort="epssScore">EPSS<span class="sort-indicator" id="sort-epssScore"></span></th>
+            <th data-sort="daysToDue">Due<span class="sort-indicator" id="sort-daysToDue"></span></th>
+            <th data-sort="advisoryCount">Advisories<span class="sort-indicator" id="sort-advisoryCount"></span></th>
+            <th data-sort="patchAvailable">Patch<span class="sort-indicator" id="sort-patchAvailable"></span></th>
+          </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const currentUserEl = document.getElementById('currentUser');
+  const statusEl = document.getElementById('status');
+  const tbody = document.getElementById('tbody');
+  const hostnameInput = document.getElementById('hostname');
+  const productInput = document.getElementById('product');
+  const hostnameSuggestions = document.getElementById('hostnameSuggestions');
+  const productSuggestions = document.getElementById('productSuggestions');
+  const headerSorters = Array.from(document.querySelectorAll('th[data-sort]'));
+  let currentRows = [];
+  let sortField = 'score';
+  let sortDirection = 'desc';
+  let hostnameSuggestTimer = null;
+  let productSuggestTimer = null;
+
+  function accessToken() { return localStorage.getItem('accessToken'); }
+  function refreshToken() { return localStorage.getItem('refreshToken'); }
+  function logout() {
+    localStorage.removeItem('accessToken');
+    localStorage.removeItem('refreshToken');
+    window.location.replace('/');
+  }
+
+  function setStatus(msg, danger = false) {
+    statusEl.textContent = msg;
+    statusEl.className = danger ? 'small text-danger mb-2' : 'small text-muted mb-2';
+  }
+
+  function esc(s) {
+    if (s === null || s === undefined) return '';
+    return String(s)
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#039;');
+  }
+
+  function badgeForScore(score) {
+    const n = Number(score) || 0;
+    if (n >= 850) return 'text-bg-danger';
+    if (n >= 650) return 'text-bg-warning';
+    if (n >= 450) return 'text-bg-primary';
+    return 'text-bg-secondary';
+  }
+
+  function fmtDue(days) {
+    if (days === null || days === undefined) return 'n/a';
+    if (days < 0) return `${Math.abs(days)} overdue`;
+    return `${days} day(s)`;
+  }
+
+  function cveUrl(cveId) {
+    const id = (cveId || '').trim();
+    return id ? `https://nvd.nist.gov/vuln/detail/${encodeURIComponent(id)}` : '#';
+  }
+
+  function valueForSort(row, field) {
+    const value = row[field];
+    if (value === null || value === undefined) return '';
+    return value;
+  }
+
+  function compareRows(a, b) {
+    const va = valueForSort(a, sortField);
+    const vb = valueForSort(b, sortField);
+
+    let result;
+    if (typeof va === 'number' || typeof vb === 'number') {
+      result = Number(va || 0) - Number(vb || 0);
+    } else if (typeof va === 'boolean' || typeof vb === 'boolean') {
+      result = Number(Boolean(va)) - Number(Boolean(vb));
+    } else {
+      result = String(va).localeCompare(String(vb), undefined, { sensitivity: 'base' });
+    }
+
+    return sortDirection === 'asc' ? result : -result;
+  }
+
+  function updateSortIndicators() {
+    for (const th of headerSorters) {
+      const field = th.dataset.sort;
+      const el = document.getElementById('sort-' + field);
+      if (!el) continue;
+      if (field !== sortField) {
+        el.textContent = '';
+      } else {
+        el.textContent = sortDirection === 'asc' ? '▲' : '▼';
+      }
+    }
+  }
+
+  function sortRows() {
+    currentRows = [...currentRows].sort(compareRows);
+    renderRows(currentRows);
+    updateSortIndicators();
+  }
+
+  async function tryRefreshToken() {
+    const rt = refreshToken();
+    if (!rt) return false;
+    const res = await fetch('/api/auth/refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refreshToken: rt })
+    });
+    if (!res.ok) return false;
+    const data = await res.json();
+    if (!data || !data.accessToken) return false;
+    localStorage.setItem('accessToken', data.accessToken);
+    if (data.refreshToken) localStorage.setItem('refreshToken', data.refreshToken);
+    return true;
+  }
+
+  async function apiFetch(url, options = {}, allowRetry = true) {
+    const token = accessToken();
+    const headers = Object.assign({}, options.headers || {});
+    if (token) headers.Authorization = 'Bearer ' + token;
+
+    let res = await fetch(url, Object.assign({}, options, { headers }));
+    if ((res.status === 401 || res.status === 403) && allowRetry) {
+      const refreshed = await tryRefreshToken();
+      if (refreshed) {
+        const retryHeaders = Object.assign({}, options.headers || {}, { Authorization: 'Bearer ' + accessToken() });
+        res = await fetch(url, Object.assign({}, options, { headers: retryHeaders }));
+      }
+    }
+    if (res.status === 401) {
+      logout();
+      throw new Error('Unauthorized');
+    }
+    if (res.status === 403) {
+      throw new Error('Access denied');
+    }
+    return res;
+  }
+
+  async function loadCurrentUser() {
+    try {
+      const meRes = await apiFetch('/api/users/me');
+      const me = await meRes.json();
+      const roles = (me.roles || []).map(r => String(r).toUpperCase().replace(/^ROLE_/, '')).join(', ');
+      currentUserEl.textContent = `${me.email || 'unknown'} (${roles || 'n/a'})`;
+      return me;
+    } catch {
+      currentUserEl.textContent = '';
+      return null;
+    }
+  }
+
+  function queryValue(id) {
+    const v = document.getElementById(id).value;
+    return v && v.trim() ? v.trim() : null;
+  }
+
+  function buildUrl() {
+    const params = new URLSearchParams();
+
+    const fields = ['q', 'hostname', 'product', 'version', 'cveId', 'minScore', 'maxScore', 'limit'];
+    for (const field of fields) {
+      const value = queryValue(field);
+      if (value !== null) params.set(field, value);
+    }
+
+    return '/api/assets/search?' + params.toString();
+  }
+
+  function renderRows(rows) {
+    tbody.innerHTML = rows.map(r => `
+      <tr>
+        <td>${esc(r.hostname)}</td>
+        <td>${esc(r.product)}</td>
+        <td>${esc(r.vendor)}</td>
+        <td>${esc(r.version)}</td>
+        <td><a href="${cveUrl(r.cveId)}" target="_blank" rel="noopener noreferrer">${esc(r.cveId)}</a></td>
+        <td><span class="badge ${badgeForScore(r.score)}">${esc(r.score)}</span></td>
+        <td>${r.epssScore == null ? 'n/a' : esc(r.epssScore)}</td>
+        <td>${fmtDue(r.daysToDue)}</td>
+        <td>${esc(r.advisoryCount)}</td>
+        <td>${r.patchAvailable ? '<span class="badge text-bg-success">yes</span>' : '<span class="badge text-bg-secondary">no</span>'}</td>
+      </tr>
+    `).join('');
+  }
+
+  async function loadHostnameSuggestions(prefix) {
+    try {
+      const params = new URLSearchParams();
+      params.set('prefix', prefix || '');
+      params.set('limit', '10');
+
+      const res = await apiFetch('/api/assets/hostnames?' + params.toString());
+      const txt = await res.text();
+      if (!res.ok) throw new Error(txt || 'Failed to load suggestions');
+
+      const suggestions = JSON.parse(txt || '[]');
+      hostnameSuggestions.innerHTML = suggestions.map(v => `<option value="${esc(v)}"></option>`).join('');
+    } catch {
+      hostnameSuggestions.innerHTML = '';
+    }
+  }
+
+  async function loadProductSuggestions(prefix) {
+    try {
+      const params = new URLSearchParams();
+      params.set('prefix', prefix || '');
+      params.set('limit', '10');
+
+      const res = await apiFetch('/api/assets/products?' + params.toString());
+      const txt = await res.text();
+      if (!res.ok) throw new Error(txt || 'Failed to load suggestions');
+
+      const suggestions = JSON.parse(txt || '[]');
+      productSuggestions.innerHTML = suggestions.map(v => `<option value="${esc(v)}"></option>`).join('');
+    } catch {
+      productSuggestions.innerHTML = '';
+    }
+  }
+
+  async function search() {
+    setStatus('Searching assets...');
+    try {
+      const url = buildUrl();
+      const res = await apiFetch(url);
+      const txt = await res.text();
+      if (!res.ok) throw new Error(txt || 'Search failed');
+      const rows = JSON.parse(txt || '[]');
+      currentRows = rows;
+      sortRows();
+      setStatus(`Found ${rows.length} row(s).`);
+    } catch (e) {
+      setStatus('Search failed: ' + e.message, true);
+    }
+  }
+
+  function resetFilters() {
+    ['q', 'hostname', 'product', 'version', 'cveId', 'minScore', 'maxScore'].forEach(id => {
+      document.getElementById(id).value = '';
+    });
+    document.getElementById('limit').value = '200';
+    search();
+  }
+
+  document.getElementById('btnSearch').addEventListener('click', search);
+  document.getElementById('btnReset').addEventListener('click', resetFilters);
+  document.getElementById('btnLogout').addEventListener('click', logout);
+  hostnameInput.addEventListener('input', async () => {
+    if (hostnameSuggestTimer) clearTimeout(hostnameSuggestTimer);
+    hostnameSuggestTimer = setTimeout(async () => {
+      await loadHostnameSuggestions(hostnameInput.value || '');
+    }, 180);
+  });
+  productInput.addEventListener('input', async () => {
+    if (productSuggestTimer) clearTimeout(productSuggestTimer);
+    productSuggestTimer = setTimeout(async () => {
+      await loadProductSuggestions(productInput.value || '');
+    }, 180);
+  });
+
+  for (const th of headerSorters) {
+    th.addEventListener('click', () => {
+      const field = th.dataset.sort;
+      if (sortField === field) {
+        sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+      } else {
+        sortField = field;
+        sortDirection = field === 'score' ? 'desc' : 'asc';
+      }
+      sortRows();
+    });
+  }
+
+  (async function init() {
+    if (!accessToken()) {
+      const refreshed = await tryRefreshToken();
+      if (!refreshed) {
+        logout();
+        return;
+      }
+    }
+
+    const me = await loadCurrentUser();
+    if (!me) return;
+    updateSortIndicators();
+    await loadHostnameSuggestions('');
+    await loadProductSuggestions('');
+    await search();
+  })();
+</script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>VulScan – Dashboard</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+
+  <style>
+    .hscroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .risk-table { min-width: 980px; }
+    .risk-table thead th { position: sticky; top: 0; z-index: 3; background: #fff; }
+    .sticky-labels { position: sticky; left: 0; z-index: 2; background: #fff; width: 260px; min-width: 260px; border-right: 1px solid #dee2e6; }
+    .sticky-labels-header { position: sticky; left: 0; z-index: 4; background: #fff; width: 260px; min-width: 260px; border-right: 1px solid #dee2e6; }
+    .stack { display: grid; gap: 8px; }
+    .k { color: #6c757d; font-size: 0.875rem; white-space: nowrap; }
+    .v { word-break: break-word; }
+    #status { white-space: pre-wrap; }
+    .top-card { height: 100%; }
+  </style>
+</head>
+
+<body class="bg-light">
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+  <div class="container">
+    <a class="navbar-brand" href="/dashboard.html">VulScan</a>
+
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#topnav"
+            aria-controls="topnav" aria-expanded="false" aria-label="Toggle navigation">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+
+    <div class="collapse navbar-collapse" id="topnav">
+      <ul class="navbar-nav me-auto">
+        <li class="nav-item">
+          <a class="nav-link active" href="/dashboard.html">Dashboard</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/assets.html">Assets</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/admin-users.html">Access</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/feeds.html">Feeds</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/api.html" target="_blank" rel="noopener noreferrer">API documentation</a>
+        </li>
+      </ul>
+
+      <div class="d-flex align-items-center gap-3">
+        <span id="currentUser" class="text-light small"></span>
+        <button id="btnLogout" class="btn btn-sm btn-outline-light">Logout</button>
+      </div>
+    </div>
+  </div>
+</nav>
+
+<div class="container my-4">
+  <div class="row g-3 align-items-stretch">
+    <div class="col-12 col-lg-6">
+      <div class="card shadow-sm top-card h-100">
+        <div class="card-body d-flex flex-column">
+          <h5 class="card-title">Client machines (summary)</h5>
+          <div id="summary" class="mt-2 text-muted">Loading...</div>
+          <hr class="my-3"/>
+          <h6 class="mb-2">Most recent hosts</h6>
+          <ul id="hosts" class="list-group list-group-flush"></ul>
+          <div class="mt-auto"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 col-lg-6">
+      <div class="card shadow-sm top-card h-100">
+        <div class="card-body d-flex flex-column">
+          <h5 class="card-title">Client download</h5>
+          <p class="text-muted small mb-2">Inventory export scripts (CSV) to upload into your import endpoint.</p>
+          <div class="d-grid gap-2">
+            <a class="btn btn-outline-dark" href="/downloads/inventory_windows.ps1">Windows (PowerShell)</a>
+            <a class="btn btn-outline-dark" href="/downloads/inventory_linux.sh">Linux (Bash)</a>
+          </div>
+          <div class="mt-3 small text-muted">Tip: set API_URL in the script to point to your server (e.g. http://SERVER:8080/api/inventory/import).</div>
+          <div class="mt-auto"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card shadow-sm mt-3">
+    <div class="card-body">
+      <div class="d-flex flex-wrap gap-2 align-items-center">
+        <h5 class="card-title mb-0">Top risks</h5>
+        <div class="ms-auto d-flex align-items-center gap-2">
+          <label for="limit" class="form-label mb-0">Limit</label>
+          <input id="limit" type="number" class="form-control form-control-sm" style="width:90px" min="1" max="200" value="20" />
+          <button id="btnRisks" class="btn btn-sm btn-outline-primary">Refresh</button>
+        </div>
+      </div>
+      <div id="status" class="mt-2 small text-muted"></div>
+      <div class="hscroll mt-3">
+        <table class="table table-sm align-middle risk-table">
+          <thead>
+          <tr>
+            <th class="sticky-labels-header">Fields</th>
+            <th>Risk</th>
+          </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="scoreModal" tabindex="-1" aria-labelledby="scoreModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="scoreModalLabel">Risk score calculation</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" id="scoreModalBody"></div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const statusEl = document.getElementById('status');
+  const tbody = document.getElementById('tbody');
+  const limitEl = document.getElementById('limit');
+  const summaryEl = document.getElementById('summary');
+  const hostsEl = document.getElementById('hosts');
+  const currentUserEl = document.getElementById('currentUser');
+  const scoreModalEl = document.getElementById('scoreModal');
+  const scoreModalBody = document.getElementById('scoreModalBody');
+  let lastRiskRows = [];
+
+  function setStatus(msg) { statusEl.textContent = msg; }
+  function esc(s) { if (s === null || s === undefined) return ''; return String(s).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#039;'); }
+  function cveUrl(cveId) { const id = (cveId || '').trim(); return 'https://nvd.nist.gov/vuln/detail/' + encodeURIComponent(id); }
+  function badgeForScore(score) { const n = Number(score) || 0; if (n >= 850) return 'text-bg-danger'; if (n >= 650) return 'text-bg-warning'; if (n >= 450) return 'text-bg-primary'; return 'text-bg-secondary'; }
+
+  function accessToken() { return localStorage.getItem('accessToken'); }
+  function refreshToken() { return localStorage.getItem('refreshToken'); }
+  function logout() { localStorage.removeItem('accessToken'); localStorage.removeItem('refreshToken'); window.location.replace('/'); }
+
+  async function tryRefreshToken() {
+    const rt = refreshToken();
+    if (!rt) return false;
+    const res = await fetch('/api/auth/refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refreshToken: rt })
+    });
+    if (!res.ok) return false;
+    const data = await res.json();
+    if (!data || !data.accessToken) return false;
+    localStorage.setItem('accessToken', data.accessToken);
+    if (data.refreshToken) localStorage.setItem('refreshToken', data.refreshToken);
+    return true;
+  }
+
+  async function apiFetch(url, options = {}, allowRetry = true) {
+    const token = accessToken();
+    const headers = Object.assign({}, options.headers || {});
+    if (token) headers.Authorization = 'Bearer ' + token;
+
+    let res = await fetch(url, Object.assign({}, options, { headers }));
+    if ((res.status === 401 || res.status === 403) && allowRetry) {
+      const refreshed = await tryRefreshToken();
+      if (refreshed) {
+        const retryHeaders = Object.assign({}, options.headers || {}, { Authorization: 'Bearer ' + accessToken() });
+        res = await fetch(url, Object.assign({}, options, { headers: retryHeaders }));
+      }
+    }
+    if (res.status === 401) {
+      logout();
+      throw new Error('Unauthorized');
+    }
+    if (res.status === 403) {
+      throw new Error('Access denied');
+    }
+    return res;
+  }
+
+  async function loadCurrentUser() {
+    try {
+      const res = await apiFetch('/api/users/me');
+      const me = await res.json();
+      const roles = (me.roles || []).map(r => String(r).toUpperCase().replace(/^ROLE_/, '')).join(', ');
+      currentUserEl.textContent = `${me.email || 'unknown'} (${roles || 'n/a'})`;
+    } catch {
+      currentUserEl.textContent = '';
+    }
+  }
+
+  async function loadSummary() {
+    const res = await apiFetch('/api/dashboard/summary');
+    const data = await res.json();
+    summaryEl.innerHTML = `
+      <div><b>Inventory rows:</b> ${esc(data.inventoryRows)}</div>
+      <div><b>Hosts:</b> ${esc(data.hostCount)}</div>
+      <div><b>KEV entries:</b> ${esc(data.kevCount)}</div>
+      <div><b>Last seen:</b> ${esc(data.lastInventorySeenAt || 'n/a')}</div>
+    `;
+  }
+
+  async function loadRecentHosts() {
+    const res = await apiFetch('/api/dashboard/hosts/recent?limit=5');
+    const data = await res.json();
+    hostsEl.innerHTML = '';
+    for (const h of data) {
+      const li = document.createElement('li');
+      li.className = 'list-group-item d-flex justify-content-between align-items-start';
+      li.innerHTML = `<div><div class="fw-semibold">${esc(h.hostname)}</div><div class="small text-muted">${esc(h.lastSeenAt || '')}</div></div><span class="badge text-bg-light border">${esc(h.itemCount)}</span>`;
+      hostsEl.appendChild(li);
+    }
+  }
+
+  async function loadTopRisks() {
+    const limit = Math.max(1, Math.min(parseInt(limitEl.value || '20', 10), 200));
+    setStatus('Loading top risks (limit=' + limit + ') ...');
+    try {
+      const res = await apiFetch('/api/risks/top?limit=' + encodeURIComponent(limit));
+      const txt = await res.text();
+      if (!res.ok) throw new Error(txt);
+      const data = JSON.parse(txt);
+      lastRiskRows = data;
+      renderRisks(data);
+      setStatus('Top risks loaded: ' + data.length + ' item(s)');
+    } catch (e) {
+      setStatus('Top risks ERROR: ' + e.message);
+    }
+  }
+
+  function renderRisks(rows) {
+    tbody.innerHTML = '';
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      const idx = i + 1;
+      const ransomware = r.knownRansomwareCampaignUse === true ? 'true' : r.knownRansomwareCampaignUse === false ? 'false' : 'n/a';
+      const labels = document.createElement('td');
+      labels.className = 'sticky-labels';
+      labels.innerHTML = `<div class="stack"><div class="k">#</div><div class="k">Score</div><div class="k">Host</div><div class="k">Inventory product</div><div class="k">Inventory vendor</div><div class="k">CVE</div><div class="k">KEV vendor / product</div><div class="k">Due date</div><div class="k">Ransomware</div></div>`;
+      const values = document.createElement('td');
+      values.innerHTML = `<div class="stack"><div class="v"><span class="badge text-bg-light border">${idx}</span></div><div class="v"><button type="button" class="btn btn-sm badge ${badgeForScore(r.score)}" onclick="showScoreDetails(${i})">${esc(r.score)}</button></div><div class="v">${esc(r.hostname)}</div><div class="v">${esc(r.inventoryProduct)}</div><div class="v">${esc(r.inventoryVendor)}</div><div class="v"><a href="${cveUrl(r.cveId)}" target="_blank" rel="noopener noreferrer">${esc(r.cveId)}</a></div><div class="v">${esc(r.kevVendorProject)} / ${esc(r.kevProduct)}</div><div class="v">${esc(r.dueDate)}</div><div class="v">${esc(ransomware)}</div></div>`;
+      const tr = document.createElement('tr');
+      tr.appendChild(labels);
+      tr.appendChild(values);
+      tbody.appendChild(tr);
+    }
+  }
+
+  function showScoreDetails(rowIndex) {
+    const r = lastRiskRows[rowIndex];
+    if (!r) return;
+
+    const dueText = r.daysToDue == null
+      ? 'n/a'
+      : (r.daysToDue < 0 ? `${Math.abs(r.daysToDue)} day(s) overdue` : `${r.daysToDue} day(s) to due date`);
+    const patchText = r.patchAvailable === true ? 'yes' : r.patchAvailable === false ? 'no' : 'n/a';
+    const nvdDetailUrl = r.cveId
+      ? `https://nvd.nist.gov/vuln/detail/${encodeURIComponent(r.cveId)}`
+      : null;
+    const nvdDetailLink = nvdDetailUrl
+      ? `<a href="${esc(nvdDetailUrl)}" target="_blank" rel="noopener noreferrer">${esc(nvdDetailUrl)}</a>`
+      : 'n/a';
+
+    scoreModalBody.innerHTML = `
+      <div class="small text-muted mb-2">Host: <b>${esc(r.hostname)}</b> | CVE: <b>${esc(r.cveId)}</b></div>
+      <table class="table table-sm">
+        <tbody>
+          <tr><td>KEV base score</td><td class="text-end">${esc(r.kevBaseScore)}</td></tr>
+          <tr><td>Ransomware bonus</td><td class="text-end">${esc(r.ransomwareBonus)}</td></tr>
+          <tr><td>Due urgency score</td><td class="text-end">${esc(r.dueUrgencyScore)}</td></tr>
+          <tr><td>KEV recency score</td><td class="text-end">${esc(r.kevRecencyScore)}</td></tr>
+          <tr><td>EPSS exploit score</td><td class="text-end">${esc(r.epssExploitScore)}</td></tr>
+          <tr><td>EPSS raw score</td><td class="text-end">${esc(r.epssScore)}</td></tr>
+          <tr><td>Asset criticality score</td><td class="text-end">${esc(r.assetCriticalityScore)}</td></tr>
+          <tr><td>Match confidence score</td><td class="text-end">${esc(r.matchConfidenceScore)}</td></tr>
+          <tr><td>NVD advisory count</td><td class="text-end">${esc(r.advisoryCount)}</td></tr>
+          <tr><td>Patch signal available</td><td class="text-end">${esc(patchText)}</td></tr>
+          <tr class="table-light"><td><b>Total score</b></td><td class="text-end"><b>${esc(r.score)}</b></td></tr>
+        </tbody>
+      </table>
+      <div class="small text-muted">Due date relation: ${esc(dueText)}</div>
+      <div class="small text-muted">NVD detail: ${nvdDetailLink}</div>
+      <div class="small text-muted">Formula (0-1000): score = kevBaseScore + ransomwareBonus + dueUrgencyScore + kevRecencyScore + epssExploitScore + assetCriticalityScore + matchConfidenceScore</div>
+    `;
+    const scoreModal = new bootstrap.Modal(scoreModalEl);
+    scoreModal.show();
+  }
+
+  document.getElementById('btnRisks').addEventListener('click', loadTopRisks);
+  document.getElementById('btnLogout').addEventListener('click', logout);
+  window.showScoreDetails = showScoreDetails;
+
+  (async function init() {
+    if (!accessToken()) {
+      const refreshed = await tryRefreshToken();
+      if (!refreshed) {
+        logout();
+        return;
+      }
+    }
+    await loadSummary();
+    await loadCurrentUser();
+    await loadRecentHosts();
+    await loadTopRisks();
+  })();
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

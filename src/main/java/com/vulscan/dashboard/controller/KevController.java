@@ -5,10 +5,12 @@ import com.vulscan.dashboard.dto.KevRefreshStatusDto;
 import com.vulscan.dashboard.service.KevRefreshService;
 import com.vulscan.dashboard.repository.KevRefreshLogRepository;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/kev")
+@PreAuthorize("hasAnyRole('USER','ADMIN','SUPERADMIN')")
 public class KevController {
 
     private final KevRefreshService kevRefreshService;
@@ -20,6 +22,7 @@ public class KevController {
     }
 
     @PostMapping("/refresh")
+    @PreAuthorize("hasAnyRole('ADMIN','SUPERADMIN')")
     public ResponseEntity<KevRefreshResultDto> refresh() {
         return ResponseEntity.ok(kevRefreshService.refreshKev());
     }

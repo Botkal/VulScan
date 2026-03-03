@@ -7,31 +7,5 @@ services:
       POSTGRES_PASSWORD: vulscan
     ports:
       - "5432:5432"
-    volumes:
-      - vulscan_pg:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U vulscan -d VulScanDb"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-
-  app:
-    image: vulscanapp:1.0
-    depends_on:
-      postgres:
-        condition: service_healthy
-    ports:
-      - "8080:8080"
-    environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/VulScanDb
-      SPRING_DATASOURCE_USERNAME: vulscan
-      SPRING_DATASOURCE_PASSWORD: vulscan
-      SPRING_FLYWAY_ENABLED: "true"
-
-      # SPRING_FLYWAY_URL: jdbc:postgresql://postgres:5432/VulScanDb
-      # SPRING_FLYWAY_USER: vulscan
-      # SPRING_FLYWAY_PASSWORD: vulscan
-
-volumes:
-  vulscan_pg:
+ 
 

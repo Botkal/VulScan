@@ -5,12 +5,14 @@ import com.vulscan.dashboard.dto.HostSummaryDto;
 import com.vulscan.dashboard.dto.LatestKevDto;
 import com.vulscan.dashboard.repository.DashboardRepository;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
 @RestController
 @RequestMapping("/api/dashboard")
+@PreAuthorize("hasAnyRole('USER','ADMIN','SUPERADMIN')")
 public class DashboardController {
 
     private final DashboardRepository repo;

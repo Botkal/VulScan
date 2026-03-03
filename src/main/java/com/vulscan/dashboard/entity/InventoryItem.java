@@ -95,22 +95,22 @@ public class InventoryItem {
     @Column(name="source", nullable=false, length=50)
     private String source = "powershell_csv";
 
-    @Column(name="hostname", nullable=false)
+    @Column(name="hostname", nullable=false, length = 1000)
     private String hostname;
 
-    @Column(name="asset_tag")
+    @Column(name="asset_tag", length = 1000)
     private String assetTag;
 
-    @Column(name="vendor")
+    @Column(name="vendor", length = 1000)
     private String vendor;
 
-    @Column(name="product", nullable=false)
+    @Column(name="product", nullable=false, length = 1000)
     private String product;
 
-    @Column(name="version")
+    @Column(name="version", length = 100)
     private String version;
 
-    @Column(name="cpe")
+    @Column(name="cpe", columnDefinition = "TEXT")
     private String cpe;
 
     @Column(name="installed_on")

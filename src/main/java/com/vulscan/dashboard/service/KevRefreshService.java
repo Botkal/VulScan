@@ -10,34 +10,43 @@ import com.vulscan.dashboard.repository.KevRefreshLogRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
+import java.util.concurrent.CancellationException;
 
 @Service
 public class KevRefreshService {
 
-    private static final String KEV_URL =
-            "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json";
+    private final String defaultKevUrl;
 
     private final WebClient webClient;
     private final KevEntryRepository kevRepo;
     private final KevRefreshLogRepository logRepo;
 
     public KevRefreshService(WebClient.Builder webClientBuilder,
+                             @Value("${app.kev-feed-url:https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json}") String defaultKevUrl,
                              KevEntryRepository kevRepo,
                              KevRefreshLogRepository logRepo) {
         this.webClient = webClientBuilder.build();
+        this.defaultKevUrl = defaultKevUrl;
         this.kevRepo = kevRepo;
         this.logRepo = logRepo;
     }
 
     @Transactional
     public KevRefreshResultDto refreshKev() {
+        return refreshKev(defaultKevUrl);
+    }
+
+    @Transactional
+    public KevRefreshResultDto refreshKev(String feedUrl) {
+        ensureNotInterrupted();
         int before = safeCountKev();
 
         KevCatalogDto catalog = webClient.get()
-                .uri(KEV_URL)
+                .uri(feedUrl)
                 .retrieve()
                 .bodyToMono(KevCatalogDto.class)
                 .block();
@@ -51,6 +60,7 @@ public class KevRefreshService {
         int upserted = 0;
 
         for (KevDto v : catalog.vulnerabilities()) {
+            ensureNotInterrupted();
             if (v == null || v.cveID() == null || v.cveID().isBlank()) continue;
 
             KevEntry e = new KevEntry();
@@ -72,6 +82,12 @@ public class KevRefreshService {
         saveLog(catalog.vulnerabilities().size(), upserted, before, after);
 
         return new KevRefreshResultDto(catalog.vulnerabilities().size(), upserted);
+    }
+
+    private static void ensureNotInterrupted() {
+        if (Thread.currentThread().isInterrupted()) {
+            throw new CancellationException("Refresh was cancelled");
+        }
     }
 
     private int safeCountKev() {

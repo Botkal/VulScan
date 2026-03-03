@@ -5,10 +5,10 @@ spring:
     password: ${DB_PASS:vulscan}
   jpa:
     hibernate:
-      ddl-auto: validate
+      ddl-auto: update
     show-sql: false
   flyway:
-    enabled: true
+    enabled: false
 
 server:
   port: 8080
@@ -16,3 +16,17 @@ server:
 app:
   default-top-limit: 50
   kev-feed-url: https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json
+  epss-feed-url: https://api.first.org/data/v1/epss
+  nvd-feed-url: https://services.nvd.nist.gov/rest/json/cves/2.0
+  nvd-api-key: ${NVD_API_KEY:}
+  nvd-request-delay-ms: ${NVD_REQUEST_DELAY_MS:1500}
+  nvd-max-cves-per-run: ${NVD_MAX_CVES_PER_RUN:120}
+  jwt:
+    secret: ${JWT_SECRET:change-me-in-production-please-change-me-in-production}
+    access-minutes: ${JWT_ACCESS_MINUTES:30}
+    refresh-days: ${JWT_REFRESH_DAYS:7}
+    issuer: ${JWT_ISSUER:vulscan-api}
+  superadmin:
+    enabled: ${SUPERADMIN_ENABLED:true}
+    email: ${SUPERADMIN_EMAIL:superadmin@vulscan.local}
+    password: ${SUPERADMIN_PASSWORD:SuperAdmin123!}
